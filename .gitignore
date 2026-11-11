@@ -2,3 +2,26 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+
+# Development tools and build products
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Local credentials and settings
+.env
+.env.*
+!.env.example
+
+# Datasets and generated artifacts
+/data/
+/outputs/
+/checkpoints/
+/runs/
+*.pt
+*.pth
+*.ckpt

@@ -1,0 +1,29 @@
+# 调试模板。配置加载、分词器和训练器均待实现。
+# 词表大小由分词器决定，不在此处硬编码。
+model:
+  d_model: 128
+  n_heads: 4
+  num_encoder_layers: 2
+  num_decoder_layers: 2
+  d_ff: 512
+  dropout: 0.1
+  max_seq_len: 128
+
+tokenizer:
+  type: word
+  pad_id: 0
+  unk_id: 1
+  bos_id: 2
+  eos_id: 3
+
+data:
+  task: copy
+  max_seq_len: 32
+
+training:
+  device: auto
+  seed: 42
+  batch_size: 16
+  epochs: 10
+  learning_rate: 0.001
+  checkpoint_dir: outputs/checkpoints/tiny

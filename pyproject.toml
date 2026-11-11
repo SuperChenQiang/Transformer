@@ -1,11 +1,43 @@
 [project]
 name = "transformer"
 version = "0.1.0"
+description = "A step-by-step PyTorch reproduction of Attention Is All You Need"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "matplotlib>=3.11.2",
     "numpy>=2.5.4",
+    "pyyaml>=6.0.3",
+    "sacrebleu>=2.6.0",
+    "torch>=2.15.0",
+    "tqdm>=4.70.1",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/transformer"]
 
 [[tool.uv.index]]
 url = "https://pypi.mirrors.ustc.edu.cn/simple"
 default = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --import-mode=importlib"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.4",
+]
