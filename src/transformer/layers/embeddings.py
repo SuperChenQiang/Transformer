@@ -15,8 +15,8 @@ class TokenEmbedding(nn.Module):
         self,
         vocab_size: int,
         d_model: int,
-        pad_id: int = 0,
-    ) -> None:
+        pad_id: int = 0,) -> None:
+
         super().__init__()
 
         if vocab_size <= 0 or d_model <= 0:
@@ -46,8 +46,8 @@ class SinusoidalPositionalEncoding(nn.Module):
         self,
         d_model: int,
         max_seq_len: int = 5000,
-        dropout: float = 0.1,
-    ) -> None:
+        dropout: float = 0.1,) -> None:
+
         super().__init__()
 
         if d_model <= 0 or max_seq_len <= 0:
@@ -56,9 +56,12 @@ class SinusoidalPositionalEncoding(nn.Module):
         self.d_model = d_model
         self.dropout = nn.Dropout(dropout)
 
+        #shape: [max_seq_len, 1]
         position = torch.arange(max_seq_len, dtype=torch.float32).unsqueeze(1)
+
+        #PE(pos, 2i) = sin(pos / 10000^(2i/d_model))
         div_term = torch.exp(
-            torch.arange(0, d_model, 2, dtype=torch.float32) * (-math.log(10000.0) / d_model)
+            torch.arange(0, d_model, 2, dtype=torch.float32) / d_model * (-math.log(10000.0))
         )
         angles = position * div_term
 
