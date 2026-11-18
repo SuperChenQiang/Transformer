@@ -1,7 +1,83 @@
-"""TODO：实现序列数据集和 collate_fn。
+"""文本对数据集与序列 batch 补齐。"""
 
-先实现合成复制任务，再接真实平行文本。
-使用 tokenizer 编码、添加 BOS/EOS、补齐 batch 并创建错位目标标签。
-计划输出 src_ids、tgt_input_ids、tgt_labels；张量为 torch.long。
-原始数据放在仓库根目录 data/，不要与本源码目录混淆。
-"""
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+import torch
+from torch import Tensor
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import Dataset
+
+from transformer.data.tokenizer import WordTokenizer
+
+
+class ParallelTextDataset(Dataset[dict[str, Tensor]]):
+    """将文本对编码为源输入、目标输入与目标标签。
+    分词器须先完成 fit() 或 load()。
+    max_seq_len 限制最终源输入与目标输入的长度，包含各自的特殊词元。
+    """
+
+    def __init__(
+        self,
+        pairs: Sequence[tuple[str, str]],
+        src_tokenizer: WordTokenizer,
+        tgt_tokenizer: WordTokenizer,
+        max_seq_len: int = 128,
+    ) -> None:
+        super().__init__()
+
+        if max_seq_len < 1:
+            raise ValueError("max_seq_len 必须至少为 1")
+        if src_tokenizer.pad_id != tgt_tokenizer.pad_id:
+            raise ValueError("当前项目要求源、目标分词器使用相同的 pad_id")
+
+        self.pairs = list(pairs)
+        self.src_tokenizer = src_tokenizer
+        self.tgt_tokenizer = tgt_tokenizer
+        self.max_seq_len = max_seq_len
+
+    def __len__(self) -> int:
+        """返回文本对数量。"""
+        return len(self.pairs)
+
+    def __getitem__(self, index: int) -> dict[str, Tensor]:
+        """返回一条样本，三个字段都是尚未补齐的一维 torch.long 张量。"""
+
+        src_text, tgt_text = self.pairs[index]
+
+        src_tokens = self.src_tokenizer.encode(src_text)
+        tgt_tokens = self.tgt_tokenizer.encode(tgt_text)
+
+        # 为源 EOS、目标输入 BOS 以及目标标签 EOS 预留位置。
+        src_tokens = src_tokens[: self.max_seq_len - 1]
+        tgt_tokens = tgt_tokens[: self.max_seq_len - 1]
+
+        src_ids = src_tokens + [self.src_tokenizer.eos_id]
+        tgt_ids = [self.tgt_tokenizer.bos_id] + tgt_tokens + [self.tgt_tokenizer.eos_id]
+
+        return {
+            "src_ids": torch.tensor(src_ids, dtype=torch.long),
+            "tgt_input_ids": torch.tensor(tgt_ids[:-1], dtype=torch.long),
+            "tgt_labels": torch.tensor(tgt_ids[1:], dtype=torch.long),
+        }
+
+
+def collate_batch(
+    batch: list[dict[str, Tensor]],
+    pad_id: int = 0,
+) -> dict[str, Tensor]:
+    """将多条样本右侧补齐，返回 batch 维度在前的二维张量。"""
+    if not batch:
+        raise ValueError("batch 不能为空")
+
+    result: dict[str, Tensor] = {}
+    for name in ("src_ids", "tgt_input_ids", "tgt_labels"):
+        sequences = [sample[name] for sample in batch]
+        result[name] = pad_sequence(
+            sequences,
+            batch_first=True,
+            padding_value=pad_id,
+        )
+
+    return result
