@@ -36,7 +36,7 @@ uv run --locked --no-dev python scripts/train.py --device cpu --epochs 10 --outp
 ### 3. 生成和评估
 
 ```bash
-uv run --locked --no-dev python scripts/translate.py --device cpu --checkpoint outputs/quickstart/model.pt --text "red blue green yellow"
+uv run --locked --no-dev python scripts/translate.py --device cpu --checkpoint outputs/quickstart/model.pt --text "I love you"
 uv run --locked --no-dev python scripts/evaluate.py --device cpu --checkpoint outputs/quickstart/model.pt
 ```
 
