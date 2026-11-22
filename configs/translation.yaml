@@ -1,0 +1,30 @@
+# Tatoeba 英译中入门配置。先运行 scripts/prepare_translation.py。
+model:
+  d_model: 96
+  n_heads: 4
+  num_encoder_layers: 2
+  num_decoder_layers: 2
+  d_ff: 192
+  dropout: 0.1
+  max_seq_len: 32
+
+tokenizer:
+  type: word
+  src_mode: en
+  tgt_mode: char
+  pad_id: 0
+
+data:
+  task: translation
+  max_seq_len: 32
+  train_path: data/tatoeba-en-zh/train.tsv
+  validation_path: data/tatoeba-en-zh/validation.tsv
+  test_path: data/tatoeba-en-zh/test.tsv
+
+training:
+  device: auto
+  seed: 42
+  batch_size: 96
+  epochs: 20
+  learning_rate: 0.001
+  checkpoint_dir: outputs/checkpoints/en-zh

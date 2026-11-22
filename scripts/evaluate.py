@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 import yaml
-from sacrebleu.metrics import BLEU  # type: ignore
+from sacrebleu.metrics import BLEU, CHRF
 from train import load_pairs, read_config, select_device
 from translate import generate_texts, load_model_bundle
 
@@ -22,8 +22,8 @@ def run(args: argparse.Namespace) -> None:
     pairs = load_pairs(data, "test", info["seed"])
     limit = info["max_seq_len"]
     max_new_tokens = args.max_new_tokens if args.max_new_tokens is not None else limit
-    if args.batch_size < 1:
-        raise ValueError("batch_size 必须为正整数")
+    if args.batch_size < 1 or args.examples < 0:
+        raise ValueError("batch_size 必须为正整数，examples 必须为非负整数")
 
     hypotheses = []
     references = [target for _, target in pairs]
@@ -41,7 +41,10 @@ def run(args: argparse.Namespace) -> None:
             )
         )
 
-    metric = BLEU(tokenize=args.bleu_tokenize)
+    bleu_tokenize = args.bleu_tokenize
+    if bleu_tokenize is None:
+        bleu_tokenize = "zh" if tgt_tokenizer.mode == "char" else "13a"
+    metric = BLEU(tokenize=bleu_tokenize)
     score = metric.corpus_score(hypotheses, [references])
 
     print(f"task={data['task']} split=test samples={len(references)}")
@@ -50,16 +53,25 @@ def run(args: argparse.Namespace) -> None:
     if data["task"] == "copy":
         matches = sum(hyp == ref for hyp, ref in zip(hypotheses, references, strict=True))
         print(f"exact_match={matches}/{len(references)} ({matches / len(references):.1%})")
+    else:
+        chrf = CHRF()
+        print(
+            f"chrF={chrf.corpus_score(hypotheses, [references]).score:.2f} ({chrf.get_signature()})"
+        )
+
+    for (source, reference), hypothesis in zip(pairs[: args.examples], hypotheses):
+        print(f"源句：{source}\n预测：{hypothesis}\n参考：{reference}\n")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", type=Path, required=True)
-    parser.add_argument("--config", type=Path, default=Path("configs/tiny.yaml"))
+    parser.add_argument("--config", type=Path, default=Path("configs/translation.yaml"))
     parser.add_argument("--device", default="auto")
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--max-new-tokens", type=int)
-    parser.add_argument("--bleu-tokenize", default="13a")
+    parser.add_argument("--bleu-tokenize", help="覆盖 BLEU 的分词规则，中文默认 zh")
+    parser.add_argument("--examples", type=int, default=0, help="显示前 N 个测试例子的译文")
     args = parser.parse_args()
 
     try:

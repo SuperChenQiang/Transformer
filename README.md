@@ -1,91 +1,128 @@
-# Transformer 从零实现
+# Transformer 从零实现英译中
 
-用 PyTorch 复现 [Attention Is All You Need](https://arxiv.org/html/1706.03762v7) 的 Encoder–Decoder Transformer。
-你可以先在 CPU 上跑完一个小任务，再沿着数据流亲手实现注意力、编码器、解码器和训练循环。
+用 PyTorch 实现 [Attention Is All You Need](https://arxiv.org/html/1706.03762v7) 的 Encoder–Decoder Transformer。
+默认用真实英中句对训练，输入一句英文，模型逐字生成中文。项目保留了从注意力公式到训练和评估的完整代码，适合按文件逐步复现。
 
-[快速开始](#快速开始) · [学习路线](#学习路线) · [使用自己的翻译数据](#使用自己的翻译数据)
+```text
+Transformer/
+├── configs/
+│   ├── translation.yaml          # 默认：Tatoeba 英译中
+│   ├── tiny.yaml                 # 可选：合成复制任务，用于排查流程
+│   └── base.yaml                 # 论文 Base 模型尺寸，供自定义语料使用
+├── scripts/
+│   ├── prepare_translation.py    # 下载语料、去重、分组划分
+│   ├── train.py                  # 训练、保存和继续训练
+│   ├── translate.py              # 加载模型，翻译一句英文
+│   └── evaluate.py               # 独立测试集的 BLEU、chrF 和译文
+└── src/transformer/
+    ├── config.py                 # 模型参数与配置校验
+    ├── model.py                  # 组装完整 Transformer
+    ├── layers/
+    │   ├── attention.py          # 缩放点积和多头注意力
+    │   ├── masks.py              # 填充掩码和因果掩码
+    │   ├── embeddings.py         # 词嵌入和正弦位置编码
+    │   ├── feed_forward.py        # 每个位置的前馈网络
+    │   ├── encoder.py             # EncoderLayer 和 Encoder
+    │   └── decoder.py             # DecoderLayer 和 Decoder
+    ├── data/
+    │   ├── tokenizer.py           # 英文切词、中文字符切分、词表
+    │   └── dataset.py             # 目标输入与标签错位、batch 补齐
+    ├── training/
+    │   ├── loss.py                # 忽略 PAD 的交叉熵
+    │   ├── scheduler.py           # 可选：论文的学习率预热和衰减
+    │   └── trainer.py             # 前向、反向、更新和 checkpoint
+    └── inference/
+        └── decoding.py            # 从 BOS 开始贪心生成
+```
+
+[快速开始](#快速开始) · [按文件学习](#按文件学习) · [数据与评估](#数据与评估)
 
 ## 快速开始
 
-需要 Git 和 [uv](https://docs.astral.sh/uv/getting-started/installation/)。仓库的 `.python-version` 指定了
-Python 3.12。首次安装依赖需要联网。复制任务的数据由代码生成，训练可以在 CPU 上完成。
+需要 Git 和 [uv](https://docs.astral.sh/uv/getting-started/installation/)。`.python-version` 指定 Python 3.12。
+第一次安装依赖和下载语料需要联网。已下载代码的读者可直接在项目根目录运行安装命令。
 
-### 1. 安装
-
-从 GitHub 克隆需要有仓库访问权限，并为 GitHub 配置 SSH。已经下载代码的读者可直接在仓库根目录执行最后一行。
+### 1. 安装并准备语料
 
 ```bash
 git clone git@github.com:SuperChenQiang/Transformer.git
 cd Transformer
 uv sync --locked --no-dev
+uv run --locked --no-dev python scripts/prepare_translation.py
 ```
 
-### 2. 从零训练
+GitHub 克隆需要仓库访问权限和已配置的 SSH。准备脚本会在 `data/tatoeba-en-zh/` 生成训练、验证和测试 TSV，
+以及带原始句子署名的 `attribution.tsv`。默认快照得到 **28,961 个训练句对、500 条验证样本和 500 条测试样本**。
 
-[configs/tiny.yaml](configs/tiny.yaml) 使用复制任务。例如，输入 `red blue green yellow`，目标就是同一句话。
-代码用固定种子生成 192 条训练样本、32 条验证样本和 32 条测试样本，三个集合的句子互不重叠。
+### 2. 从零训练模型
 
 ```bash
-uv run --locked --no-dev python scripts/train.py --device cpu --epochs 10 --output-dir outputs/quickstart
+uv run --locked --no-dev python scripts/train.py --config configs/translation.yaml
 ```
 
-看到 `epoch=10/10 step=120` 就说明 10 轮已跑完。每轮都会显示训练和验证 loss，并保存最新的
-`model.pt`。目录中还会生成 `src_tokenizer.json`、`tgt_tokenizer.json` 和 `run.json`。
-复制或移动模型时，请把这四个文件放在一起。
+默认训练 20 轮，自动选择 CUDA、Apple MPS 或 CPU。也可以用 `--device cpu` 指定设备。
+如果只想确认环境能跑，先用 `--epochs 1 --output-dir outputs/translation-smoke`，再用完整配置训练。
+每轮会显示训练和验证 loss，并在 `outputs/checkpoints/en-zh/` 保存最新 `model.pt`。
+两个分词器 JSON 和 `run.json` 也保存在同一目录。移动模型时请保留这四个文件。
 
-### 3. 生成和评估
+### 3. 翻译一句英文，再评估测试集
 
 ```bash
-uv run --locked --no-dev python scripts/translate.py --device cpu --checkpoint outputs/quickstart/model.pt --text "I love you"
-uv run --locked --no-dev python scripts/evaluate.py --device cpu --checkpoint outputs/quickstart/model.pt
+uv run --locked --no-dev python scripts/translate.py --checkpoint outputs/checkpoints/en-zh/model.pt --text "I love you"
+uv run --locked --no-dev python scripts/evaluate.py --config configs/translation.yaml --checkpoint outputs/checkpoints/en-zh/model.pt --examples 3
 ```
 
-第一条生成一句话，第二条在 32 条测试样本上打印 **BLEU、评分签名和整句完全匹配率**。
-一次 Apple Silicon CPU 试跑中，示例句成功复制，测试集完全匹配 `2/32`。
-短训练适合检查流程，生成仍可能出现漏词或重复。可以用验证 loss 观察训练进展。
+第一条会从英文生成中文。第二条打印语料级 BLEU、chrF、评分签名和几条预测与参考译文。
+`I love you` 对应的句子在语料训练集中，适合演示命令。新句子的表现请看独立测试集。
 
-### 4. 从 checkpoint 继续
-
-```bash
-uv run --locked --no-dev python scripts/train.py --device cpu --resume outputs/quickstart/model.pt --epochs 12
-```
-
-`--epochs 12` 是总轮数。从第 10 轮恢复后会再训练两轮。想从头再做一次实验时，给 `--output-dir` 换一个新目录。
-
-## 学习路线
-
-第一次只跟下面这条主线。每一步选一个函数自己重写，用小张量核对行为，再进入下一步。
-配置解析、设备选择、词表保存和命令行参数可以等需要修改时再看。
-
-| 顺序 | 先看哪里 | 动手验证什么 |
-| --- | --- | --- |
-| 1. 注意力与掩码 | [`attention.py`](src/transformer/layers/attention.py) 的 `scaled_dot_product_attention`，然后看 [`masks.py`](src/transformer/layers/masks.py) | 先用两个词元算出注意力权重，再加因果掩码，确认未来位置的权重是 0。 |
-| 2. 多头与模型 | [`MultiHeadAttention`](src/transformer/layers/attention.py)、[`EncoderLayer`](src/transformer/layers/encoder.py)、[`DecoderLayer`](src/transformer/layers/decoder.py)，最后读 [`Transformer.forward`](src/transformer/model.py) | 跟踪 `[B, L, D] → [B, H, L, D/H] → [B, L, D]`。找出三种注意力分别从哪里取 Q、K、V，再跑一次前向，确认 logits 的形状是 `[B, T, V]`。 |
-| 3. 标签与训练 | [`ParallelTextDataset.__getitem__`](src/transformer/data/dataset.py)、[`loss.py`](src/transformer/training/loss.py)、[`Trainer._run_epoch`](src/transformer/training/trainer.py) | 打印一个 batch 的目标输入和标签，确认标签向前错开一位。给标签加上 PAD，检查它对损失的影响，再用同一个小 batch 训练几次。 |
-| 4. 自回归生成 | [`greedy_decode`](src/transformer/inference/decoding.py) | 打印每轮的目标前缀，确认编码器只执行一次，每轮把新词接回前缀，到 EOS 或长度上限停止。 |
-
-这些维度里，`B` 是批大小，`L` 是序列长度，`D` 是隐藏维度，`H` 是头数，`T` 是目标长度，`V` 是目标词表大小。
-注意力的核心是 `Q @ K.T / sqrt(d_head) → mask → softmax → @ V`。编码器自注意力的 Q、K、V 来自源序列，
-解码器自注意力的 Q、K、V 来自目标前缀，交叉注意力的 Q 来自解码器，K、V 来自编码器输出。
-注意力外还有残差和层归一化，每层用前馈网络独立处理各个位置。第一次读到位置编码时，先跟踪它在哪里加到词嵌入上即可。
-
-训练和生成的区别可以用一句话检查：
+一次 Apple Silicon MPS 实跑 20 轮得到以下结果，其他设备上的输出可能有所差异：
 
 ```text
-源输入：      red blue <eos>
-目标输入：    <bos> red blue
-监督标签：    red blue <eos>
-
-训练：按已知目标输入预测每个位置的下一个词。
-生成：从 <bos> 开始，把自己刚预测的词接回去，再预测下一个。
+I love you.       → 我爱你。
+Good morning.     → 早上好。
+I am a student.   → 我是学生。
 ```
 
-### 第一个动手练习
+在 500 条独立测试句上，BLEU 为 **35.13**（`tok:zh`），chrF 为 **29.96**。
+例如，一个测试句 `I didn't mean to imply anything.` 被译为「我没想暗示什么。」，
+但习语 `So far, so good.` 在这次试跑中译错了。
 
-在仓库根目录的 Bash 或 Zsh 中运行。也可以把 Python 部分粘贴到 VS Code 的临时脚本里，用项目的 `.venv` 运行。
+### 4. 继续训练
 
 ```bash
-uv run --locked --no-dev python - <<'PY'
+uv run --locked --no-dev python scripts/train.py --config configs/translation.yaml --resume outputs/checkpoints/en-zh/model.pt --epochs 25
+```
+
+`--epochs` 表示总轮数。第 20 轮结束后执行这条命令会再跑 5 轮。
+想重新训练一个模型，用 `--output-dir` 指定新目录。旧的复制任务 checkpoint 仍可用于复制配置。
+
+## 按文件学习
+
+先跑一次翻译，再按下面的顺序读模型。每行对应一个 Python 文件，先重写列出来的关键部分。
+配置解析、语料下载和命令行入口可以等你要改训练设置时再看。
+
+| 顺序 | Python 文件 | 优先看什么 | 怎么验证 |
+| --- | --- | --- | --- |
+| 1 | [attention.py](src/transformer/layers/attention.py) | `scaled_dot_product_attention()`、`MultiHeadAttention.forward()` | 从 `QKᵀ / √d_head` 算权重，再乘 V。打印拆头后的 `[B, H, L, D/H]`。 |
+| 2 | [masks.py](src/transformer/layers/masks.py) | `create_padding_mask()`、`create_causal_mask()` | 取 3 个位置，确认未来位置和 PAD 列会被屏蔽，`True` 表示屏蔽。 |
+| 3 | [embeddings.py](src/transformer/layers/embeddings.py) | `TokenEmbedding.forward()`、`SinusoidalPositionalEncoding.forward()` | 从词元编号得到 `[B, L, D]`，观察同一个词在不同位置加上的编码。 |
+| 4 | [feed_forward.py](src/transformer/layers/feed_forward.py) | `PositionwiseFeedForward.forward()` | 跟踪 `D → d_ff → D`，确认每个位置用同一套参数独立计算。 |
+| 5 | [encoder.py](src/transformer/layers/encoder.py) | `EncoderLayer.forward()` | 找到源序列自注意力和两次残差加层归一化。 |
+| 6 | [decoder.py](src/transformer/layers/decoder.py) | `DecoderLayer.forward()` | 区分带因果掩码的目标自注意力，以及读取源句的交叉注意力。 |
+| 7 | [model.py](src/transformer/model.py) | `encode()`、`decode()`、`forward()` | 先走一次完整前向，确认输出为 `[B, T, V_tgt]` 的 logits。 |
+| 8 | [dataset.py](src/transformer/data/dataset.py) | `ParallelTextDataset.__getitem__()` | 打印目标输入 `[BOS, 我, 爱, 你]` 和标签 `[我, 爱, 你, EOS]`，看清一位错位。 |
+| 9 | [loss.py](src/transformer/training/loss.py) | `LabelSmoothedCrossEntropyLoss.forward()` | 修改 PAD 位置的 logits，确认损失保持不变。 |
+| 10 | [trainer.py](src/transformer/training/trainer.py) | `Trainer._run_epoch()` | 跟一批数据走完前向、反向和参数更新。 |
+| 11 | [decoding.py](src/transformer/inference/decoding.py) | `greedy_decode()` | 打印每轮目标前缀，确认新词接回去，遇 EOS 停止。 |
+
+**先记住三种注意力的来源。** 编码器自注意力的 Q、K、V 都来自源序列。
+解码器自注意力的 Q、K、V 都来自目标前缀。交叉注意力的 Q 来自解码器，K、V 来自编码器输出。
+训练时模型使用已知目标前缀，翻译时从 BOS 开始，把自己生成的词元接回去。
+
+第一个练习只需要两个位置。把下面的 Python 片段放进 VS Code 的临时文件，用项目解释器运行，
+再尝试去掉 `mask`，观察第一行的权重如何变化。
+
+```python
 import torch
 
 from transformer.layers.attention import scaled_dot_product_attention
@@ -99,23 +136,24 @@ output, weights = scaled_dot_product_attention(q, k, v, mask=mask)
 print(weights)
 torch.testing.assert_close(weights[0], torch.tensor([1.0, 0.0]))
 torch.testing.assert_close(output[0], v[0])
-PY
 ```
 
-第一行权重应为 `[1, 0]`，所以第一个位置的输出等于第一个 Value。试着去掉 `mask=mask`，观察第一行权重如何变化。
+## 数据与评估
 
-## 使用自己的翻译数据
+默认语料来自 [ManyThings 的 Tatoeba 英中句对](https://www.manythings.org/anki/)，使用 2026-02-13 快照。
+原始语料采用 [CC BY 2.0 France](https://creativecommons.org/licenses/by/2.0/fr/)，逐句署名随数据保存在
+`attribution.tsv`。脚本保存压缩包 SHA-256，验证通过后才处理。如果上游更新了下载文件，可以用
+`--archive` 指向原快照 ZIP。
 
-准备独立的训练、验证、测试文件。每个文件使用 UTF-8 TSV，每行是一个源句、一个 Tab、一个目标句，无表头。
-复制 [configs/base.yaml](configs/base.yaml)，填写 `data.train_path`、`data.validation_path` 和 `data.test_path`，
-并给 `training.checkpoint_dir` 选一个新目录。首次试自己的语料也可以使用 tiny 配置的模型尺寸。
-训练和评估时用 `--config` 指向这份配置，生成和评估时用 `--checkpoint` 指向训练结果。
+准备数据时将中文转为简体，按归一化英文源句分组，确保同一源句的多个译文留在同一数据划分。
+词表只从训练集建立。英文切词会分开标点并忽略句末句号，中文按字符切分，生成后直接拼接。
+这是用于学习的短句翻译模型，长句、罕见词和新的主题都可能翻译不准。BLEU 和 chrF 反映与参考译文的重合程度，
+应结合预测样例一起看。这里的结果不与论文 WMT 成绩直接比较。
 
-当前分词器按空白切分，中文等语料需要使用一致的预分词方式。小型复制任务和 TSV 流程用于学习和验证实现。
-要复现论文的 WMT 成绩，还需准备相应语料、子词分词、训练规模和评估设置。
+可以将自己的英中语料保存为三个 UTF-8 TSV 文件，每行是 `英文<Tab>中文`，无表头。
+复制 [translation.yaml](configs/translation.yaml)，修改 `data.train_path`、`data.validation_path`、
+`data.test_path` 和 `training.checkpoint_dir`，训练和评估时通过 `--config` 指向该文件。
 
-## 参考
-
-- [Attention Is All You Need](https://arxiv.org/html/1706.03762v7) — 先读第 3 节的模型结构，再看第 5.3 节的优化设置。
-- [The Annotated Transformer](https://nlp.seas.harvard.edu/annotated-transformer/) — 论文公式和张量实现的对照阅读。
-- [MiniMind](https://github.com/jingyaogong/minimind) — 本 README 的快速上手组织参考。
+资料：[Transformer 原论文](https://arxiv.org/html/1706.03762v7) ·
+[The Annotated Transformer](https://nlp.seas.harvard.edu/annotated-transformer/) ·
+[MiniMind](https://github.com/jingyaogong/minimind)（快速上手的组织参考）

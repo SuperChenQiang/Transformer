@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import torch
@@ -88,7 +89,12 @@ def main() -> None:
         model, src_tokenizer, tgt_tokenizer, info = load_model_bundle(
             args.checkpoint, select_device(args.device)
         )
+        if info["task"] == "copy":
+            print("当前 checkpoint 用于复制任务。英译中请加载翻译训练得到的模型。", file=sys.stderr)
         limit = info["max_seq_len"]
+        source_ids = src_tokenizer.encode(args.text)[: limit - 1]
+        if not source_ids or all(token_id == src_tokenizer.unk_id for token_id in source_ids):
+            raise ValueError("输入中没有词表可识别的源词元，请检查所选 checkpoint 和输入语言")
         max_new_tokens = args.max_new_tokens if args.max_new_tokens is not None else limit
         result = generate_texts(
             model,

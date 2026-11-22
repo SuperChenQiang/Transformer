@@ -1,7 +1,7 @@
 # 从哪个文件开始写
 
-目录已经准备好，不需要按目录的显示顺序开发。
-先完成可独立验证的模块，再组装有依赖的模块。
+第一次读代码，可按 [README 的模型学习路线](../README.md#按文件学习) 找到重点。
+下表记录从零搭建整套项目时的建议实现顺序。
 
 | 顺序 | 文件 | 首先实现 | 对应验证文件 |
 | --- | --- | --- | --- |
@@ -20,29 +20,11 @@
 
 ## 每个模块的工作方式
 
-1. 阅读文件里的 TODO 和 `docs/architecture.md`，确定输入输出。
-2. 编写模块代码，并在对应测试文件添加真实的行为测试。
-3. 运行该模块测试，再运行全部测试和 Ruff。
-4. 检查差异，自己执行 Git add / commit / push。
-
-例如 tokenizer 完成后：
-
-```bash
-uv run pytest tests/test_tokenizer.py -q
-uv run pytest
-uv run ruff check .
-uv run ruff format --check .
-git diff
-git add src/transformer/data/tokenizer.py tests/test_tokenizer.py
-git commit -m "feat: implement word tokenizer"
-git push
-```
-
-目前 `tests/test_tokenizer.py` 只有待办说明，单独运行它会因没有收集到测试而退出。
-添加真实测试函数后再使用上面的模块测试命令。
+1. 阅读模块和 [架构约定](architecture.md)，先确定张量形状及掩码含义。
+2. 在自己的练习文件里重写关键函数，用小张量检查前向和边界条件。
+3. 改动模型后，从 README 的快速开始走一遍数据、训练和推理。
 
 ## 训练验收顺序
 
 固定张量前向/反向 → 固定小批次过拟合 → 合成复制任务 → 小规模真实翻译。
-数据来源、词表、语言对、算力预算和评估协议在进入真实任务时确定。
-模型能够前向或训练 loss 下降，不代表翻译质量已经通过评估。
+当前真实任务为 Tatoeba 英译中。用验证集观察训练进展，用独立测试集报告 BLEU、chrF 和具体译文。

@@ -133,13 +133,17 @@ def run(args: argparse.Namespace) -> None:
     tokenizer_options = config.get("tokenizer", {})
     if tokenizer_options.get("type", "word") != "word":
         raise ValueError("当前支持 tokenizer.type: word")
+    src_mode = tokenizer_options.get("src_mode", "word")
+    tgt_mode = tokenizer_options.get("tgt_mode", "word")
 
     if resume is not None:
         src_tokenizer = WordTokenizer.load(src_vocab)
         tgt_tokenizer = WordTokenizer.load(tgt_vocab)
+        if (src_tokenizer.mode, tgt_tokenizer.mode) != (src_mode, tgt_mode):
+            raise ValueError("继续训练时请沿用原来的源端和目标端分词模式")
     else:
-        src_tokenizer = WordTokenizer()
-        tgt_tokenizer = WordTokenizer()
+        src_tokenizer = WordTokenizer(mode=src_mode)
+        tgt_tokenizer = WordTokenizer(mode=tgt_mode, lowercase=tgt_mode != "char")
         src_tokenizer.fit(src for src, _ in train_pairs)
         tgt_tokenizer.fit(tgt for _, tgt in train_pairs)
 
@@ -217,7 +221,7 @@ def run(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, default=Path("configs/tiny.yaml"))
+    parser.add_argument("--config", type=Path, default=Path("configs/translation.yaml"))
     parser.add_argument("--resume", type=Path, help="从已有 checkpoint 继续训练")
     parser.add_argument("--epochs", type=int, help="总轮数，包含已经完成的轮数")
     parser.add_argument("--output-dir", type=Path)

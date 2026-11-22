@@ -11,6 +11,8 @@ model:
 
 tokenizer:
   type: word
+  src_mode: en
+  tgt_mode: char
   pad_id: 0
   unk_id: 1
   bos_id: 2
