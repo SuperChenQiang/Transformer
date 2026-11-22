@@ -142,8 +142,7 @@ torch.testing.assert_close(output[0], v[0])
 
 默认语料来自 [ManyThings 的 Tatoeba 英中句对](https://www.manythings.org/anki/)，使用 2026-02-13 快照。
 原始语料采用 [CC BY 2.0 France](https://creativecommons.org/licenses/by/2.0/fr/)，逐句署名随数据保存在
-`attribution.tsv`。脚本保存压缩包 SHA-256，验证通过后才处理。如果上游更新了下载文件，可以用
-`--archive` 指向原快照 ZIP。
+`attribution.tsv`。
 
 准备数据时将中文转为简体，按归一化英文源句分组，确保同一源句的多个译文留在同一数据划分。
 词表只从训练集建立。英文切词会分开标点并忽略句末句号，中文按字符切分，生成后直接拼接。
